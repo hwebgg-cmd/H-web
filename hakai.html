@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Czarna kulka i linie – Hakai od środka</title>
+<style>
+html, body {
+  margin: 0;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #000;
+  cursor: none;
+}
+
+.kulka {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  background-color: #b72424;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.trail {
+  position: absolute;
+  border-radius: 50%;
+  background-color: rgba(70, 0, 0, 0.4);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  z-index: 1;
+}
+
+.line {
+  position: absolute;
+  height: 8px;
+  background-color: #800000;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cursor-x {
+  position: fixed;
+  color: white;
+  font-weight: bold;
+  font-size: 18px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  user-select: none;
+}
+</style>
+</head>
+<body>
+<div class="kulka"></div>
+<div class="cursor-x" style="display: none;">✖</div>
+
+<script>
+const kulka = document.querySelector('.kulka');
+const cursorX = document.querySelector('.cursor-x');
+
+let posX = window.innerWidth / 2;
+let posY = window.innerHeight / 2;
+let mouseX = posX;
+let mouseY = posY;
+
+let drawingMode = false;
+let isDrawing = false;
+let startX, startY;
+let currentLine;
+let lines = [];
+
+window.addEventListener('mousemove', e => {
+  mouseX = e.clientX;
+  mouseY = e.clientY;
+
+  cursorX.style.left = `${mouseX}px`;
+  cursorX.style.top = `${mouseY}px`;
+
+  if (drawingMode && isDrawing) {
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    const length = Math.hypot(dx, dy);
+    const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+    currentLine.style.width = length + 'px';
+    currentLine.style.transform = `rotate(${angle}deg)`;
+  }
+});
+
+function createTrail(x, y) {
+  for (let i = 0; i < 12; i++) {
+    const t = document.createElement('div');
+    t.className = 'trail';
+    const size = 10 + Math.random() * 20;
+    t.style.width = size + 'px';
+    t.style.height = size + 'px';
+    t.style.left = (x + (Math.random()-0.5)*20) + 'px';
+    t.style.top = (y + (Math.random()-0.5)*20) + 'px';
+    document.body.appendChild(t);
+    setTimeout(()=>{ t.style.opacity=0; t.style.transform='translate(-50%,-50%) scale(0.3)'; },75);
+    setTimeout(()=>t.remove(),1000);
+  }
+}
+
+function animate() {
+  if(!drawingMode){
+    const dx = mouseX - posX;
+    const dy = mouseY - posY;
+    const dist = Math.hypot(dx,dy);
+    if(dist>1){
+      const speed=0.15;
+      posX += dx*speed;
+      posY += dy*speed;
+    }
+    createTrail(posX,posY);
+  }
+
+  kulka.style.left = posX+'px';
+  kulka.style.top = posY+'px';
+
+  lines.forEach(line=>{
+    try {
+      if(!line.hakaiStarted && checkCollision(line)){
+        startHakai(line);
+      }
+    } catch(e) {
+      console.error('Collision check error:', e);
+    }
+  });
+
+  requestAnimationFrame(animate);
+}
+
+window.addEventListener('keydown', e=>{
+  if(e.ctrlKey && e.key==='i'){
+    drawingMode = !drawingMode;
+    cursorX.style.display = drawingMode ? 'block':'none';
+  }
+});
+
+window.addEventListener('mousedown', e=>{
+  if(drawingMode){
+    isDrawing = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    currentLine = document.createElement('div');
+    currentLine.className='line';
+    currentLine.style.left=startX+'px';
+    currentLine.style.top=startY+'px';
+    currentLine.style.transformOrigin='0% 50%';
+    document.body.appendChild(currentLine);
+    lines.push(currentLine);
+  }
+});
+
+window.addEventListener('mouseup', e=>{
+  if(drawingMode && isDrawing){
+    isDrawing=false;
+    currentLine=null;
+  }
+});
+
+animate();
+
+// --- Funkcja Hakai od punktu kolizji na zewnątrz ---
+function startHakai(line){
+  if(line.hakaiStarted) return;
+  line.hakaiStarted=true;
+
+  const lineX = parseFloat(line.style.left);
+  const lineY = parseFloat(line.style.top);
+  const width = parseFloat(line.style.width);
+  const angleMatch = line.style.transform.match(/rotate\(([-0-9.]+)deg\)/);
+  const angle = angleMatch ? parseFloat(angleMatch[1])*Math.PI/180 : 0;
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+
+  // Punkt kolizji B
+  const Bx = posX - lineX;
+  const By = posY - lineY;
+  const projLength = Bx*dx + By*dy;
+
+  const leftWidth = Math.max(0, Math.min(projLength, width));
+  const rightWidth = width - leftWidth;
+
+  // Tworzymy dwa odcinki
+  const leftLine = document.createElement('div');
+  leftLine.className='line';
+  leftLine.style.left = line.style.left;
+  leftLine.style.top = line.style.top;
+  leftLine.style.width = leftWidth+'px';
+  leftLine.style.transform = line.style.transform;
+  leftLine.style.transformOrigin='100% 50%';
+  document.body.appendChild(leftLine);
+
+  const rightLine = document.createElement('div');
+  rightLine.className='line';
+  rightLine.style.left = (parseFloat(line.style.left) + leftWidth * Math.cos(angle)) + 'px';
+  rightLine.style.top = (parseFloat(line.style.top) + leftWidth * Math.sin(angle)) + 'px';
+  rightLine.style.width = rightWidth+'px';
+  rightLine.style.transform = line.style.transform;
+  rightLine.style.transformOrigin='0% 50%';
+  document.body.appendChild(rightLine);
+
+  line.remove();
+
+  // Animacja zjada od środka
+  function animateSegment(seg){
+    const speed = 5;
+    function step(){
+      const w = parseFloat(seg.style.width);
+      if(w<=0){
+        seg.remove();
+        return;
+      }
+      seg.style.width = Math.max(0,w-speed)+'px';
+      requestAnimationFrame(step);
+    }
+    step();
+  }
+
+  animateSegment(leftLine);
+   animateSegment(rightLine);
+ }
+
++function checkCollision(line){
++  try {
++    const lineX = parseFloat(line.style.left) || 0;
++    const lineY = parseFloat(line.style.top) || 0;
++    const width = parseFloat(line.style.width) || 0;
++    
++    if(width <= 0) return false;
++    
++    const transformStr = line.style.transform || '';
++    const angleMatch = transformStr.match(/rotate\(([-0-9.]+)deg\)/);
++    const angle = angleMatch ? parseFloat(angleMatch[1])*Math.PI/180 : 0;
++    const dx = Math.cos(angle);
++    const dy = Math.sin(angle);
++
++    const ballRadius = 20;
++    
++    const ballRelX = posX - lineX;
++    const ballRelY = posY - lineY;
++    const t = Math.max(0, Math.min(ballRelX * dx + ballRelY * dy, width));
++    
++    const closestX = lineX + t * dx;
++    const closestY = lineY + t * dy;
++    
++    const distSq = (posX - closestX) ** 2 + (posY - closestY) ** 2;
++    return distSq < (ballRadius + 4) ** 2;
++  } catch(e) {
++    console.error('checkCollision error:', e);
++    return false;
++  }
++}
++</script>
+  </body>
+ </html>
